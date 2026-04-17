@@ -8,6 +8,7 @@ export interface IUser extends mongoose.Document {
   tokenExpiry?: Date
   influenceLevel: number
   verified: boolean
+  profileImage?: string
   createdAt: Date
 }
 
@@ -19,6 +20,7 @@ const userSchema = new mongoose.Schema<IUser>({
   tokenExpiry: Date,
   influenceLevel: { type: Number, default: 0 },
   verified: { type: Boolean, default: false },
+  profileImage: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 })
 

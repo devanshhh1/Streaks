@@ -43,6 +43,7 @@ router.post("/register", async (req: Request, res: Response) => {
       tokenExpiry: user.tokenExpiry,
       influenceLevel: user.influenceLevel,
       verified: user.verified,
+      profileImage: user.profileImage,
     }
 
     res.status(201).json(userResponse)
@@ -80,6 +81,42 @@ router.post("/login", async (req: Request, res: Response) => {
       tokenExpiry: user.tokenExpiry,
       influenceLevel: user.influenceLevel,
       verified: user.verified,
+      profileImage: user.profileImage,
+    }
+
+    res.status(200).json(userResponse)
+  } catch (err: any) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+// GET /me - Get current user data
+router.get("/me", async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.replace("Bearer ", "")
+
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" })
+    }
+
+    const user = await User.findOne({ token })
+    if (!user) {
+      return res.status(401).json({ message: "Invalid token" })
+    }
+
+    if (user.tokenExpiry && user.tokenExpiry < new Date()) {
+      return res.status(401).json({ message: "Token expired" })
+    }
+
+    const userResponse = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      token: user.token,
+      tokenExpiry: user.tokenExpiry,
+      influenceLevel: user.influenceLevel,
+      verified: user.verified,
+      profileImage: user.profileImage,
     }
 
     res.status(200).json(userResponse)
@@ -130,6 +167,9 @@ router.get("/me", async (req: Request, res: Response) => {
       email: user.email,
       token: user.token,
       tokenExpiry: user.tokenExpiry,
+      influenceLevel: user.influenceLevel,
+      verified: user.verified,
+      profileImage: user.profileImage,
     }
 
     res.status(200).json(userResponse)

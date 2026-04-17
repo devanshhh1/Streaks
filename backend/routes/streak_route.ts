@@ -9,18 +9,43 @@ const router = Router()
 // Apply authentication to all streak routes
 router.use(authenticate)
 
-// Helper function to update user's total influence level
-const updateUserInfluenceLevel = async (userId: string) => {
-  const userStreaks = await Streak.find({ userId })
-  const totalInfluence = userStreaks.reduce(
-    (sum, s) => sum + (Number.isFinite(s.influenceLevel) ? s.influenceLevel : 0),
-    0
-  )
+// Helper function to update user's influence level based on events
+const updateUserInfluenceForEvent = async (userId: string, event: 'verification' | 'milestone' | 'tenure' | 'broken_promise' | 'delete_pending' | 'early_withdrawal' | 'inconsistency', streak?: IStreak) => {
+  const user = await User.findById(userId)
+  if (!user) return
 
-  await User.findByIdAndUpdate(userId, {
-    influenceLevel: totalInfluence,
-    verified: totalInfluence >= 100
-  })
+  let influenceChange = 0
+
+  switch (event) {
+    case 'verification':
+      influenceChange = 0.5
+      break
+    case 'milestone':
+      if (streak && streak.streak % 7 === 0) {
+        influenceChange = 1
+      }
+      break
+    case 'tenure':
+      // Check if tenure is completed (this would need more logic based on dates)
+      influenceChange = 2
+      break
+    case 'broken_promise':
+      influenceChange = -0.2
+      break
+    case 'delete_pending':
+      influenceChange = -0.1
+      break
+    case 'early_withdrawal':
+      influenceChange = -1
+      break
+    case 'inconsistency':
+      influenceChange = -0.2
+      break
+  }
+
+  user.influenceLevel = Math.max(0, user.influenceLevel + influenceChange)
+  user.verified = user.influenceLevel >= 100
+  await user.save()
 }
 
 router.get("/", async (req: Request, res: Response) => {
@@ -66,8 +91,8 @@ router.post("/", async (req: Request, res: Response) => {
 
     await newStreak.save()
 
-    // Update user's total influence level
-    await updateUserInfluenceLevel(req.user._id)
+    // No score change when creating a promise
+    // await updateUserInfluenceLevel(req.user._id)
 
     res.status(201).json(newStreak)
   } catch (err: any) {
@@ -147,17 +172,13 @@ router.patch("/", async (req: Request, res: Response) => {
         streak.investmentAmount = req.body.investmentAmount
       }
       
-      // Recalculate influence level
-      streak.influenceLevel = calculateInfluenceLevel(
-        streak.streak,
-        streak.dates,
-        streak.investmentAmount
-      )
-
       const updStreak = await streak.save()
 
-      // Update user's total influence level
-      await updateUserInfluenceLevel(req.user._id)
+      // Score increases for verification success
+      await updateUserInfluenceForEvent(req.user._id, 'verification', updStreak)
+      
+      // Check for milestone bonus
+      await updateUserInfluenceForEvent(req.user._id, 'milestone', updStreak)
 
       return res.status(200).json({
         updStreak,
@@ -175,12 +196,25 @@ router.delete("/", async (req: Request, res: Response) => {
   if (streak == null)
     return res.status(404).json({ message: "Bad request: Streak not found", code: -1 })
 
+  // If deleting a pending streak, apply penalty
+  if (!streak.done) {
+    await updateUserInfluenceForEvent(req.user._id, 'delete_pending')
+  }
+  // Deleting completed streaks has no penalty
+
   await streak.deleteOne()
 
-  // Update user's total influence level after deletion
-  await updateUserInfluenceLevel(req.user._id)
-
   res.status(200).json({ deleted: true, streak })
+})
+
+router.post("/penalty", async (req: Request, res: Response) => {
+  const { type, streakName } = req.body
+  
+  if (type === 'broken_promise') {
+    await updateUserInfluenceForEvent(req.user._id, 'broken_promise')
+  }
+  
+  res.status(200).json({ applied: true })
 })
 
 export default router
