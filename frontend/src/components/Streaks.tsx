@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef } from "react"
+import AddInvestmentForm, { InvestmentData } from "./AddInvestmentForm"
+import "./Dashboard.css"
 
 const Streaks = () => {
 
@@ -7,27 +9,36 @@ const Streaks = () => {
     streak: number,
     lastDate: string,
     dates: string[],
-    done: boolean
+    done: boolean,
+    investmentAmount: number,
+    verified: boolean,
+    influenceLevel: number,
+    investmentType: string,
+    tenure: number,
+    bank: string,
+    autoDebit: boolean,
+    createdAt: string
   }
   
   const fakeDates = ["2023-05-07T05:00:00.000Z", "2023-05-08T05:00:00.000Z", "2023-05-09T05:00:00.000Z", "2023-05-10T05:00:00.000Z", "2023-05-11T05:00:00.000Z"]
   const [StreakData, setStreakData] = useState<StreakInterface[]>([
-    { streakName: "L", streak: 10000, lastDate: "test", dates: fakeDates, done: true },
-    { streakName: "Working Out", streak: 2, lastDate: "test", dates: fakeDates, done: false },
-    { streakName: "Doing Github", streak: 225, lastDate: "test", dates: fakeDates, done: false }
+    { streakName: "L", streak: 10000, lastDate: "test", dates: fakeDates, done: true, investmentAmount: 0, verified: false, influenceLevel: 0, investmentType: '', tenure: 0, bank: '', autoDebit: false, createdAt: '2023-05-01T00:00:00.000Z' },
+    { streakName: "Working Out", streak: 2, lastDate: "test", dates: fakeDates, done: false, investmentAmount: 0, verified: false, influenceLevel: 0, investmentType: '', tenure: 0, bank: '', autoDebit: false, createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() },
+    { streakName: "Doing Github", streak: 225, lastDate: "test", dates: fakeDates, done: false, investmentAmount: 0, verified: false, influenceLevel: 0, investmentType: '', tenure: 0, bank: '', autoDebit: false, createdAt: '2023-05-01T00:00:00.000Z' }
   ])
   
   // const [StreakData, setStreakData] = useState<StreakInterface[]>([])
   const [newStreakModal, setNewStreakModal] = useState(false)
-  const [newStreakName, setNewStreakName] = useState('')
   const focusRef = useRef<any>()
+  const [loadingStreaks, setLoadingStreaks] = useState<Set<string>>(new Set())
+  const [showSuccessPopup, setShowSuccessPopup] = useState<string | null>(null)
 
   const [streakDisplayModal, setStreakDisplayModal] = useState(false)
   let [streakDisplayName, setStreakDisplayName] =  useState("")
 
   useEffect( () => { 
     (async () => {
-      const StreaksJSON = await fetch('http://localhost:3000', {
+      const StreaksJSON = await fetch('http://localhost:5030', {
         method: 'GET',
         headers: {
           "Content-Type": "application/json"
@@ -53,30 +64,42 @@ const Streaks = () => {
 
   // if (!StreakData) throw {error: 'StreakData undefined'}
 
-  const addNewStreak = (newStreakName: string) => {
-    if(newStreakName == '' || StreakData.find((Streak) => { if(Streak.streakName == newStreakName) return true })) return
+  const addNewStreak = async (data: InvestmentData) => {
+    const streakName = `${data.investmentType} - ₹${data.amount}`
+
+    if(StreakData.find((Streak) => { if(Streak.streakName == streakName) return true })) return
 
     const Yesterday = new Date()
     Yesterday.setHours(-24, 0, 0, 0)    // Set date to prev day
 
     const newStreak: StreakInterface = {
-      streakName: newStreakName,
+      streakName: streakName,
       streak: 0,
       done: false,
       dates: [], 
-      lastDate: Yesterday.toJSON()
+      lastDate: Yesterday.toJSON(),
+      investmentAmount: data.amount,
+      verified: true, // Since verified via Blostem
+      influenceLevel: 0, // Will be updated from backend
+      investmentType: data.investmentType,
+      tenure: data.tenure,
+      bank: data.bank,
+      autoDebit: data.autoDebit,
+      createdAt: new Date().toISOString()
     }
 
-    setStreakData((prev) => {
-      return [...prev, newStreak]
-    })
-
-    fetch('http://localhost:3000', {
+    const response = await fetch('http://localhost:5030', {
       method: 'POST',
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(newStreak)
+    })
+
+    const createdStreak = await response.json()
+
+    setStreakData((prev) => {
+      return [...prev, createdStreak]
     })
   }
 
@@ -92,7 +115,7 @@ const Streaks = () => {
     changeStreak.lastDate = Today.toJSON()
     changeStreak.dates.push(Today.toJSON())
 
-    fetch('http://localhost:3000', {
+    fetch('http://localhost:5030', {
       method: 'PATCH',
       headers: {
         "Content-Type": "application/json"
@@ -125,8 +148,60 @@ const Streaks = () => {
     serverUpdateStreak(changeStreakName)
   }
 
+  const completeStreak = async (streakName: string) => {
+    setLoadingStreaks(prev => new Set(prev).add(streakName))
+
+    // Simulate Blostem verification
+    setTimeout(async () => {
+      const changeStreak = StreakData.find((Streak) => Streak.streakName === streakName)
+      if (!changeStreak) return
+
+      const Today = new Date()
+      Today.setHours(0, 0, 0, 0)
+      changeStreak.lastDate = Today.toJSON()
+      changeStreak.dates.push(Today.toJSON())
+      changeStreak.done = true
+      changeStreak.streak += 1
+      changeStreak.influenceLevel += (0.15 + changeStreak.streak * 0.05)
+
+      // Check for penalty
+      const hoursPassed = (Date.now() - new Date(changeStreak.createdAt).getTime()) / (1000 * 60 * 60)
+      if (hoursPassed > 24) {
+        changeStreak.influenceLevel -= 0.1
+      }
+
+      try {
+        await fetch('http://localhost:5030', {
+          method: 'PATCH',
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(changeStreak)
+        })
+      } catch (error) {
+        console.error('Error updating streak:', error)
+      }
+
+      setStreakData(prev => prev.map(streak => 
+        streak.streakName === streakName ? changeStreak : streak
+      ))
+
+      setLoadingStreaks(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(streakName)
+        return newSet
+      })
+
+      // Show success popup
+      setShowSuccessPopup(streakName)
+      setTimeout(() => {
+        setShowSuccessPopup(null)
+      }, 3000)
+    }, 3000)
+  }
+
   const serverDeleteStreak = (deleteStreakName : string) => {
-    fetch('http://localhost:3000', {
+    fetch('http://localhost:5030', {
       method: 'DELETE',
       headers: {
         "Content-Type": "application/json"
@@ -181,12 +256,18 @@ const Streaks = () => {
   }
 
   StreakData.forEach((Streak:StreakInterface) => {
+    const hoursPassed = (Date.now() - new Date(Streak.createdAt).getTime()) / (1000 * 60 * 60)
+    const isDelayed = hoursPassed > 24
+    const isLoading = loadingStreaks.has(Streak.streakName)
+
     const StreakElement = (
       <div key={Streak.streakName}
-           className="streakWrapper"
+           className={`streakWrapper ${isDelayed ? 'delayed' : ''}`}
            onClick={(e) => {
-            setStreakDisplayModal(true)
-            setStreakDisplayName(Streak.streakName)
+            if (!Streak.done && !isLoading) {
+              setStreakDisplayModal(true)
+              setStreakDisplayName(Streak.streakName)
+            }
           }}
       >
         <div className="taskCircle" style={{
@@ -197,14 +278,49 @@ const Streaks = () => {
           borderRadius: "50%"
         }}
           onClick={(e) => {
-            updateStreak(Streak.streakName)
+            if (Streak.done) {
+              updateStreak(Streak.streakName)
+            } else {
+              completeStreak(Streak.streakName)
+            }
             e.stopPropagation()
           }}
         >
-          <svg className="tick" height="8px" width="8px" version="1.1" id="Capa_1" viewBox="0 0 17.837 17.837" fill={"currentColor"}><g id="SVGRepo_bgCarrier" ></g><g id="SVGRepo_tracerCarrier" ></g><g id="SVGRepo_iconCarrier"> <g> <path d="M16.145,2.571c-0.272-0.273-0.718-0.273-0.99,0L6.92,10.804l-4.241-4.27 c-0.272-0.274-0.715-0.274-0.989,0L0.204,8.019c-0.272,0.271-0.272,0.717,0,0.99l6.217,6.258c0.272,0.271,0.715,0.271,0.99,0 L17.63,5.047c0.276-0.273,0.276-0.72,0-0.994L16.145,2.571z"></path> </g> </g></svg>
+          {isLoading ? (
+            <div className="spinner-small"></div>
+          ) : (
+            <svg className="tick" height="8px" width="8px" version="1.1" id="Capa_1" viewBox="0 0 17.837 17.837" fill={"currentColor"}>
+              <g id="SVGRepo_bgCarrier"></g>
+              <g id="SVGRepo_tracerCarrier"></g>
+              <g id="SVGRepo_iconCarrier">
+                <g>
+                  <path d="M16.145,2.571c-0.272-0.273-0.718-0.273-0.99,0L6.92,10.804l-4.241-4.27 c-0.272-0.274-0.715-0.274-0.989,0L0.204,8.019c-0.272,0.271-0.272,0.717,0,0.99l6.217,6.258c0.272,0.271,0.715,0.271,0.99,0 L17.63,5.047c0.276-0.273,0.276-0.72,0-0.994L16.145,2.571z"></path>
+                </g>
+              </g>
+            </svg>
+          )}
         </div>
-        <div className="streakName">{Streak.streakName}</div>
-        <div className="streakNumber">{Streak.streak}</div>
+        <div className="streakContent">
+          <div className="streakName">{Streak.streakName}</div>
+          <div className="streakNumber">{Streak.streak}</div>
+          {isDelayed && !Streak.done && (
+            <div className="delay-warning-small">⚠ Delay detected</div>
+          )}
+          {!Streak.done && isLoading && (
+            <div className="loading-text-small">Fetching transaction status...</div>
+          )}
+          {!Streak.done && !isLoading && (
+            <button 
+              className="cta-button-small"
+              onClick={(e) => {
+                completeStreak(Streak.streakName)
+                e.stopPropagation()
+              }}
+            >
+              {Streak.investmentType === 'Savings Goal' ? 'Sync with Bank' : 'Complete Deposit'}
+            </button>
+          )}
+        </div>
       </div>
     )
     if (Streak.done == true) doneStreakElements.push(StreakElement)
@@ -240,31 +356,15 @@ const Streaks = () => {
         {doneStreakElements}
       </div>
     </div>
-    { newStreakModal && <div className="newStreakModal frosted" 
-      onClick={(e) => {
-        if (e.target == e.currentTarget) {
+    { newStreakModal && 
+      <AddInvestmentForm 
+        onClose={() => setNewStreakModal(false)}
+        onSubmit={(data) => {
+          addNewStreak(data)
           setNewStreakModal(false)
-        } 
-      }}
-      onKeyDown={(e) => {
-        if(e.key == 'Enter' || e.key == 'Escape'){
-          if (e.key == 'Enter') addNewStreak(newStreakName)
-          setNewStreakModal(false)
-          setNewStreakName('')
-        }
-      }}>
-      <div className="newStreakBox">
-        <input className="newStreakInput" ref={focusRef} name="newStreakName" type="text" placeholder="Streak name" value={newStreakName} onChange={e => setNewStreakName(e.target.value)}/>
-        <div className="bottomNav">
-          <div className="button cancel" onClick={(e) => {setNewStreakModal(false)}}>Cancel</div>
-          <div className="button add" onClick={(e) => {
-            addNewStreak(newStreakName)
-            setNewStreakModal(false)
-            setNewStreakName('')
-          }} >Add</div>
-        </div>
-      </div>
-    </div> } 
+        }}
+      />
+    } 
     { streakDisplayModal && 
       <div className="streakDisplayModal frosted"
         onClick={(e) => {
@@ -355,6 +455,22 @@ const Streaks = () => {
         </div>
       </div>
     }
+
+    {/* Success Popup */}
+    {showSuccessPopup && (
+      <div className="popup-overlay">
+        <div className="popup-box">
+          <div className="popup-success">
+            <svg className="popup-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <h3>Transaction Completed</h3>
+            <p>Verification successful!</p>
+          </div>
+          <button className="popup-button" onClick={() => setShowSuccessPopup(null)}>OK</button>
+        </div>
+      </div>
+    )}
     </>
   )
 }
