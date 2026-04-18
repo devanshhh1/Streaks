@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react"
 import AddInvestmentForm, { InvestmentData } from "./AddInvestmentForm"
 import ConfirmationModal from "./ConfirmationModal"
 import Toast from "./Toast"
+import { API_BASE_URL } from "../lib/api"
 import "./Dashboard.css"
 
 const Streaks = () => {
@@ -48,7 +49,7 @@ const Streaks = () => {
 
   useEffect( () => { 
     (async () => {
-      const StreaksJSON = await fetch('http://localhost:5030', {
+      const StreaksJSON = await fetch(`${API_BASE_URL}/streaks`, {
         method: 'GET',
         headers: {
           "Content-Type": "application/json"
@@ -98,7 +99,7 @@ const Streaks = () => {
       createdAt: new Date().toISOString()
     }
 
-    const response = await fetch('http://localhost:5030', {
+    const response = await fetch(`${API_BASE_URL}/streaks`, {
       method: 'POST',
       headers: {
         "Content-Type": "application/json"
@@ -125,7 +126,7 @@ const Streaks = () => {
     changeStreak.lastDate = Today.toJSON()
     changeStreak.dates.push(Today.toJSON())
 
-    fetch('http://localhost:5030', {
+    fetch(`${API_BASE_URL}/streaks`, {
       method: 'PATCH',
       headers: {
         "Content-Type": "application/json"
@@ -181,7 +182,7 @@ const Streaks = () => {
       }
 
       try {
-        await fetch('http://localhost:5030', {
+        await fetch(`${API_BASE_URL}/streaks`, {
           method: 'PATCH',
           headers: {
             "Content-Type": "application/json"
@@ -212,7 +213,7 @@ const Streaks = () => {
 
   const serverDeleteStreak = async (deleteStreakName: string) => {
     try {
-      const response = await fetch('http://localhost:5030', {
+      const response = await fetch(`${API_BASE_URL}/streaks`, {
         method: 'DELETE',
         headers: {
           "Content-Type": "application/json"

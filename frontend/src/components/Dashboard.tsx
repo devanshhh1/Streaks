@@ -6,28 +6,8 @@ import './Dashboard.css'
 import { ConsistencyHeatmap } from './ConsistencyHeatmap'
 import { StreakMenu } from './StreakMenu'
 import { RecurringStreakForm } from './RecurringStreakForm'
+import { API_BASE_URL } from '../lib/api'
 import type { RecurringStreakData } from './RecurringStreakForm'
-
-interface StreakInterface {
-  _id?: string
-  streakName: string
-  frequency: 'weekly' | 'monthly'
-  streakCount: number
-  nextDueDate: string
-  completionHistory: Array<{ date: string; status: 'success' | 'missed' }>
-  status: 'pending' | 'completed'
-  influenceLevel: number
-  verified: boolean
-  investmentAmount: number
-  investmentType: string
-  tenure: number
-  bank: string
-  autoDebit: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-const API_BASE_URL = 'http://localhost:5030'
 
 const normalizeNumber = (value: unknown, fallback = 0): number => {
   const parsedValue = typeof value === 'number' ? value : Number(value)

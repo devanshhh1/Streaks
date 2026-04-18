@@ -1,9 +1,9 @@
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
 import { useNavigate, useParams } from 'react-router-dom'
+import { API_BASE_URL } from '../lib/api'
 import './Profile.css'
 
-const API_BASE_URL = 'http://localhost:5030'
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024
 const ALLOWED_PROFILE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 

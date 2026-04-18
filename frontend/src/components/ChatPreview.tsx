@@ -1,19 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { API_BASE_URL } from '../lib/api'
 import './ChatPreview.css'
-
-interface DiscussionComment {
-  _id?: string
-  userId?: string
-  text: string
-  userName: string
-  userInfluence: number
-  timestamp: string
-  isStatic?: boolean
-}
-
-const API_BASE_URL = 'http://localhost:5030'
 const POLL_INTERVAL_MS = 5000
 const POST_COOLDOWN_MS = 30000
 
