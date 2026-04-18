@@ -3,7 +3,7 @@ import Streak, { IStreak } from "../models/streak"
 import User from "../models/user"
 import { calculateInfluenceLevel, updateInfluenceForInvestment } from "../utils/influenceCalculator"
 import { authenticate } from "../middleware/auth"
-import { deleteStreak, getHeatmapData } from "../controllers/streakController"
+import { deleteStreak, getHeatmapData, completeStreak } from "../controllers/streakController"
 
 const router = Router()
 
@@ -206,6 +206,27 @@ router.patch("/", async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     res.status(400).json({ message: err.message })
+  }
+})
+
+// Complete a streak (record an investment)
+router.post("/:id/complete", async (req: Request, res: Response) => {
+  try {
+    const { investmentAmount } = req.body
+    
+    if (!investmentAmount) {
+      return res.status(400).json({ message: "Investment amount is required" })
+    }
+
+    const result = await completeStreak(req.user._id, req.params.id, investmentAmount)
+    
+    if (!result.success) {
+      return res.status(400).json({ message: result.error })
+    }
+
+    res.status(200).json(result.streak)
+  } catch (err: any) {
+    res.status(500).json({ message: err.message })
   }
 })
 

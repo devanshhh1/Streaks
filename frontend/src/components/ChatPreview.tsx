@@ -12,6 +12,7 @@ const getInfluenceTier = (influence: number) => {
   return 'low'
 }
 
+
 const getBadge = (influence: number) => {
   if (influence > 50) return 'Expert'
   if (influence > 30) return 'Reliable'

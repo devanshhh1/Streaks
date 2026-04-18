@@ -201,6 +201,5 @@ const AddInvestmentForm = ({ onClose, onSubmit }: AddInvestmentFormProps) => {
     </div>
   )
 }
-}
 
 export default AddInvestmentForm
