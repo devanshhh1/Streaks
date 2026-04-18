@@ -55,7 +55,7 @@ const Streaks = () => {
           return {...streak, done: true}
         } else return {...streak, done: false}
       }))
-    })() //JsFuck my beloved <3
+    })() 
   }, [] )
 
   useEffect( () => {

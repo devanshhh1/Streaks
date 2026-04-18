@@ -18,7 +18,23 @@ const updateUserInfluenceForEvent = async (userId: string, event: 'verification'
 
   switch (event) {
     case 'verification':
-      influenceChange = 0.5
+      // Increase influence based on investment amount
+      if (streak && streak.investmentAmount) {
+        // Base influence: amount / 1000, with tenure bonus
+        influenceChange = (streak.investmentAmount / 1000) + (streak.tenure * 0.1)
+        
+        // Apply investment type bonuses
+        if (streak.investmentType === "RD") {
+          influenceChange *= 1.2
+        }
+        
+        // Apply auto-debit bonus
+        if (streak.autoDebit) {
+          influenceChange += 2
+        }
+      } else {
+        influenceChange = 0.5 // Fallback if no investment data
+      }
       break
     case 'milestone':
       if (streak && streak.streak % 7 === 0) {

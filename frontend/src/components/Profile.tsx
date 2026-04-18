@@ -152,14 +152,14 @@ const Profile = () => {
                 </button>
               )}
             </div>
-            {profileUser.verified && <div className="verified-badge-profile">? Verified Investor</div>}
+            {profileUser.verified && <div className="verified-badge-profile"> Verified Investor</div>}
           </div>
         </div>
 
         <div className="profile-stats-grid">
           {isOwnProfile && profileUser.email && (
             <div className="stat-card">
-              <div className="stat-icon">??</div>
+              
               <div className="stat-content">
                 <div className="stat-label">Email</div>
                 <div className="stat-value">{profileUser.email}</div>
@@ -168,7 +168,7 @@ const Profile = () => {
           )}
 
           <div className="stat-card">
-            <div className="stat-icon">?</div>
+            
             <div className="stat-content">
               <div className="stat-label">Influence Level</div>
               <div className="stat-value">{influenceLevel}</div>
@@ -176,7 +176,7 @@ const Profile = () => {
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon">??</div>
+           
             <div className="stat-content">
               <div className="stat-label">Investor Level</div>
               <div className="stat-value">{investorLevel}</div>
