@@ -8,30 +8,43 @@ import { StreakMenu } from './StreakMenu'
 import { RecurringStreakForm } from './RecurringStreakForm'
 import { API_BASE_URL } from '../lib/api'
 import type { RecurringStreakData } from './RecurringStreakForm'
+import type { StreakInterface } from '../types'
 
 const normalizeNumber = (value: unknown, fallback = 0): number => {
   const parsedValue = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsedValue) ? parsedValue : fallback
 }
 
-const normalizeStreak = (streak: Partial<StreakInterface>): StreakInterface => ({
-  _id: streak._id,
-  streakName: streak.streakName ?? '',
-  frequency: streak.frequency ?? 'weekly',
-  streakCount: normalizeNumber(streak.streakCount),
-  nextDueDate: streak.nextDueDate ?? new Date().toISOString(),
-  completionHistory: Array.isArray(streak.completionHistory) ? streak.completionHistory : [],
-  status: streak.status ?? 'pending',
-  influenceLevel: normalizeNumber(streak.influenceLevel),
-  verified: Boolean(streak.verified),
-  investmentAmount: normalizeNumber(streak.investmentAmount),
-  investmentType: streak.investmentType ?? '',
-  tenure: normalizeNumber(streak.tenure),
-  bank: streak.bank ?? '',
-  autoDebit: Boolean(streak.autoDebit),
-  createdAt: streak.createdAt ?? new Date().toISOString(),
-  updatedAt: streak.updatedAt ?? new Date().toISOString(),
-})
+const normalizeStreak = (streak: Partial<StreakInterface>): StreakInterface => {
+  const frequency = streak.frequency === 'monthly' ? 'monthly' : 'weekly'
+  const completionHistory = Array.isArray(streak.completionHistory)
+    ? streak.completionHistory.map((item) => {
+        if (typeof item === 'string') {
+          return { date: item, status: 'success' as const }
+        }
+        return item
+      })
+    : []
+
+  return {
+    _id: streak._id ?? '',
+    streakName: streak.streakName ?? '',
+    frequency,
+    streakCount: normalizeNumber(streak.streakCount),
+    nextDueDate: streak.nextDueDate ?? new Date().toISOString(),
+    completionHistory,
+    status: streak.status ?? 'pending',
+    influenceLevel: normalizeNumber(streak.influenceLevel),
+    verified: Boolean(streak.verified),
+    investmentAmount: normalizeNumber(streak.investmentAmount),
+    investmentType: streak.investmentType ?? '',
+    tenure: normalizeNumber(streak.tenure),
+    bank: streak.bank ?? '',
+    autoDebit: Boolean(streak.autoDebit),
+    createdAt: streak.createdAt ?? new Date().toISOString(),
+    updatedAt: streak.updatedAt ?? new Date().toISOString(),
+  }
+}
 
 const normalizeLeaderboardUser = (leader: Partial<LeaderboardUser>): LeaderboardUser => ({
   _id: leader._id ?? '',

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { API_BASE_URL } from '../lib/api'
+import type { DiscussionComment } from '../types'
 import './ChatPreview.css'
 const POLL_INTERVAL_MS = 5000
 const POST_COOLDOWN_MS = 30000
