@@ -12,7 +12,7 @@ import commentsRouter from "./routes/comments"
 
 const app = express()
 
-const allowedOrigins = (process.env.CORS_ORIGINS)
+const allowedOrigins = (process.env.CORS_ORIGINS || '').split(',').map((origin: string) => origin.trim())
 
 app.use(cors({
   origin: allowedOrigins,
