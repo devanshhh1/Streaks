@@ -14,6 +14,15 @@ interface LeaderboardProps {
   isLoading: boolean
 }
 
+const TrophyIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M7 3h10v2h2a1 1 0 0 1 1 1v1a5 5 0 0 1-5 5h-.35A5.99 5.99 0 0 1 13 15.92V18h3v2H8v-2h3v-2.08A5.99 5.99 0 0 1 9.35 12H9a5 5 0 0 1-5-5V6a1 1 0 0 1 1-1h2V3Zm10 4V7h1a3 3 0 0 0-3-3h-1v4a4 4 0 0 0 3 3.87V7ZM7 7v4.87A4 4 0 0 1 4 8V7h3Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 const Leaderboard = ({ users, isLoading }: LeaderboardProps) => {
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
@@ -27,16 +36,24 @@ const Leaderboard = ({ users, isLoading }: LeaderboardProps) => {
         aria-expanded={isOpen}
         onClick={() => setIsOpen(true)}
       >
-        <button className="leaderboard-trigger-title">Top Investors</button>
-        
-        
+        <span className="leaderboard-trigger-icon">
+          <TrophyIcon />
+        </span>
+        <span className="leaderboard-trigger-copy">
+          <span className="leaderboard-trigger-title">Top Investors</span>
+          <span className="leaderboard-trigger-subtitle">
+            {isLoading ? 'Loading the current top 5' : 'Tap to view the top  investors'}
+          </span>
+        </span>
       </button>
 
       {isOpen && (
         <div className="leaderboard-modal-overlay" onClick={() => setIsOpen(false)}>
-          <div className="leaderboard-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          <div className="leaderboard-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="leaderboard-header">
-              <h2 className="leaderboard-title">Top Investors</h2>
+              <div>
+                <h2 className="leaderboard-title">Top Investors</h2>
+                   </div>
               <button type="button" className="leaderboard-close" onClick={() => setIsOpen(false)}>
                 Close
               </button>
@@ -74,7 +91,7 @@ const Leaderboard = ({ users, isLoading }: LeaderboardProps) => {
 
                     <div className="leaderboard-info">
                       <span className="leaderboard-name">{leader.name}</span>
-                      <span className="leaderboard-score">{`\u2B50 ${Math.floor(leader.influenceLevel)}`}</span>
+                      <span className="leaderboard-score">⭐ {Math.floor(leader.influenceLevel)}</span>
                     </div>
                   </button>
                 ))

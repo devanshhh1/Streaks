@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react"
 import AddInvestmentForm, { InvestmentData } from "./AddInvestmentForm"
+import ConfirmationModal from "./ConfirmationModal"
+import Toast from "./Toast"
 import "./Dashboard.css"
 
 const Streaks = () => {
@@ -35,6 +37,14 @@ const Streaks = () => {
 
   const [streakDisplayModal, setStreakDisplayModal] = useState(false)
   let [streakDisplayName, setStreakDisplayName] =  useState("")
+
+  // Confirmation modal and toast state
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [streakToDelete, setStreakToDelete] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
+  const [toastType, setToastType] = useState<'success' | 'error' | 'warning' | 'info'>('info')
+  const [showToast, setShowToast] = useState(false)
 
   useEffect( () => { 
     (async () => {
@@ -200,25 +210,63 @@ const Streaks = () => {
     }, 3000)
   }
 
-  const serverDeleteStreak = (deleteStreakName : string) => {
-    fetch('http://localhost:5030', {
-      method: 'DELETE',
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({streakName: deleteStreakName})
-    })
+  const serverDeleteStreak = async (deleteStreakName: string) => {
+    try {
+      const response = await fetch('http://localhost:5030', {
+        method: 'DELETE',
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ streakName: deleteStreakName })
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setToastMessage(`✅ ${result.message}`)
+        setToastType('warning')
+      } else {
+        setToastMessage(`❌ Error: ${result.message}`)
+        setToastType('error')
+      }
+    } catch (error) {
+      setToastMessage('❌ Failed to delete streak')
+      setToastType('error')
+    } finally {
+      setShowToast(true)
+      setIsDeleting(false)
+    }
   }
 
-  const deleteStreak = (deleteStreakName : string) => {
+  const deleteStreak = (deleteStreakName: string) => {
+    setStreakToDelete(deleteStreakName)
+    setConfirmDelete(true)
+  }
+
+  const confirmDeleteStreak = async () => {
+    if (!streakToDelete) return
+
+    setIsDeleting(true)
+
+    // Remove from UI optimistically
     setStreakData(() => {
       return StreakData.filter((val) => {
-        if (val.streakName == deleteStreakName) return false
+        if (val.streakName === streakToDelete) return false
         else return true
       })
     })
 
-    serverDeleteStreak(deleteStreakName)
+    // Call server delete
+    await serverDeleteStreak(streakToDelete)
+
+    // Close confirmation modal
+    setConfirmDelete(false)
+    setStreakToDelete(null)
+  }
+
+  const cancelDeleteStreak = () => {
+    setConfirmDelete(false)
+    setStreakToDelete(null)
   }
   
   let notDoneStreakElements: JSX.Element[] = [], doneStreakElements: JSX.Element[] = []
@@ -471,6 +519,28 @@ const Streaks = () => {
         </div>
       </div>
     )}
+
+    {/* Delete Confirmation Modal */}
+    <ConfirmationModal
+      isOpen={confirmDelete}
+      title="Delete Streak?"
+      message="⚠️ Deleting this streak will affect your consistency score. This action cannot be undone. Continue?"
+      confirmText="Delete Streak"
+      cancelText="Cancel"
+      onConfirm={confirmDeleteStreak}
+      onCancel={cancelDeleteStreak}
+      isDangerous={true}
+      isLoading={isDeleting}
+    />
+
+    {/* Toast Notification */}
+    <Toast
+      message={toastMessage}
+      type={toastType}
+      isVisible={showToast}
+      onClose={() => setShowToast(false)}
+      autoCloseDuration={4000}
+    />
     </>
   )
 }

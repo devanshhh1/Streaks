@@ -1,52 +1,44 @@
 /**
- * Calculates the Influence Level for a streak
- * Formula: influenceLevel = log(streak + 1) × consistencyScore × (investmentAmount / 1000)
- * Where: consistencyScore = (number of unique dates) / (total possible days between first and last date)
+ * Calculates the influence level for a recurring streak.
+ * Scale: 0-100 (max 95 to maintain aspiration)
+ * Formula: baseScore + (streakCount * 2) + (autoDebit bonus) + (investmentType bonus)
  */
 export function calculateInfluenceLevel(
-  streak: number,
-  dates: string[],
-  investmentAmount: number
+  streakCount: number,
+  investmentAmount: number,
+  tenureMonths: number = 0,
+  investmentType: string = '',
+  autoDebit: boolean = false
 ): number {
-  // Handle edge cases
-  if (!dates || dates.length === 0) {
-    return 0
+  // Base score from investment amount: (amount / 100,000) * 20 = max 20 points
+  const amountScore = Math.min(20, (investmentAmount / 100000) * 20)
+
+  // Streak count score: 2 points per streak (capped at 40 points)
+  const streakScore = Math.min(40, streakCount * 2)
+
+  // Tenure bonus: 0.5 points per month (capped at 15 points)
+  const tenureScore = Math.min(15, tenureMonths * 0.5)
+
+  // Investment type bonus
+  let typeBonus = 0
+  if (investmentType === "RD") {
+    typeBonus = 8 // Fixed Deposit gets 8 points
+  } else if (investmentType === "SIP") {
+    typeBonus = 6 // SIP gets 6 points
   }
 
-  if (dates.length === 1) {
-    // Only one date, consistency is 100% for that single day
-    const oneDayInfluence = Math.log(streak + 1) * 1 * (investmentAmount / 1000)
-    return Math.round(oneDayInfluence * 100) / 100
-  }
+  // Auto-debit bonus
+  const autoDebitBonus = autoDebit ? 5 : 0
 
-  // Calculate consistency score
-  const firstDate = new Date(dates[0])
-  const lastDate = new Date(dates[dates.length - 1])
+  // Calculate total, but cap at 95
+  const totalScore = amountScore + streakScore + tenureScore + typeBonus + autoDebitBonus
+  const cappedScore = Math.min(95, Math.max(0, totalScore))
 
-  // Calculate total possible days between first and last date
-  const timeDiff = lastDate.getTime() - firstDate.getTime()
-  const totalPossibleDays = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1 // +1 to include the first day
-
-  // Avoid division by zero
-  if (totalPossibleDays <= 0) {
-    return 0
-  }
-
-  const uniqueDatesCount = dates.length
-  const consistencyScore = uniqueDatesCount / totalPossibleDays
-
-  // Calculate influence level
-  const influenceLevel =
-    Math.log(streak + 1) * consistencyScore * (investmentAmount / 1000)
-
-  // Round to 2 decimal places
-  return Math.round(influenceLevel * 100) / 100
+  return Math.round(cappedScore * 100) / 100
 }
 
 /**
- * Updates influence level for investment submission
- * Formula: newScore = currentScore + (amount / 1000) + (tenureMonths * 0.1)
- * Bonuses: RD *1.2, autoDebit +2
+ * Updates influence level for investment submission (legacy support)
  */
 export function updateInfluenceForInvestment(
   currentScore: number,
@@ -55,15 +47,12 @@ export function updateInfluenceForInvestment(
   investmentType: string,
   autoDebit: boolean
 ): number {
-  let newScore = currentScore + (amount / 1000) + (tenureMonths * 0.1)
-
-  if (investmentType === "RD") {
-    newScore *= 1.2
-  }
-
-  if (autoDebit) {
-    newScore += 2
-  }
-
-  return Math.round(newScore * 100) / 100
+  return calculateInfluenceLevel(
+    0, // streakCount for new investment
+    amount,
+    tenureMonths,
+    investmentType,
+    autoDebit
+  )
 }
+

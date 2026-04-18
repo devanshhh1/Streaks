@@ -17,33 +17,6 @@ const API_BASE_URL = 'http://localhost:5030'
 const POLL_INTERVAL_MS = 5000
 const POST_COOLDOWN_MS = 30000
 
-const staticComments: DiscussionComment[] = [
-  {
-    _id: 'static-1',
-    userName: 'Rahul',
-    userInfluence: 82,
-    text: 'FD is best for stability when you want predictable returns.',
-    timestamp: '2026-01-10T10:00:00.000Z',
-    isStatic: true,
-  },
-  {
-    _id: 'static-2',
-    userName: 'Sneha',
-    userInfluence: 65,
-    text: 'Mutual funds are a better fit for long-term growth if you stay consistent.',
-    timestamp: '2026-01-10T10:05:00.000Z',
-    isStatic: true,
-  },
-  {
-    _id: 'static-3',
-    userName: 'Aman',
-    userInfluence: 20,
-    text: 'Crypto can work for a small allocation, but only if the risk is intentional.',
-    timestamp: '2026-01-10T10:10:00.000Z',
-    isStatic: true,
-  },
-]
-
 const getInfluenceTier = (influence: number) => {
   if (influence > 50) return 'high'
   if (influence > 30) return 'medium'
@@ -108,7 +81,7 @@ const ChatPreview = () => {
     [comments, showAllComments]
   )
 
-  const displayedComments = useMemo(() => [...staticComments, ...visibleComments], [visibleComments])
+  const displayedComments = useMemo(() => [ ...visibleComments], [visibleComments])
 
   const handlePost = async (event: FormEvent) => {
     event.preventDefault()

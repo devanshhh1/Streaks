@@ -4,6 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import './Profile.css'
 
 const API_BASE_URL = 'http://localhost:5030'
+const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024
+const ALLOWED_PROFILE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 interface ProfileUser {
   _id: string
@@ -23,6 +25,9 @@ const Profile = () => {
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null)
   const [isLoadingProfile, setIsLoadingProfile] = useState(false)
   const [profileError, setProfileError] = useState('')
+  const [uploadError, setUploadError] = useState('')
+  const [uploadMessage, setUploadMessage] = useState('')
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
 
   const isOwnProfile = useMemo(() => !id || id === user?._id, [id, user?._id])
 
@@ -90,20 +95,43 @@ const Profile = () => {
 
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || !user || !isOwnProfile) return
+
+    setUploadError('')
+    setUploadMessage('')
+
+    if (!ALLOWED_PROFILE_IMAGE_TYPES.includes(file.type)) {
+      setUploadError('Only JPG, PNG, WEBP, or GIF images are allowed.')
+      e.target.value = ''
+      return
+    }
+
+    if (file.size > MAX_PROFILE_IMAGE_BYTES) {
+      setUploadError('Profile image must be 2MB or smaller.')
+      e.target.value = ''
+      return
+    }
 
     const reader = new FileReader()
     reader.onloadend = async () => {
-      const base64 = reader.result as string
+      const base64 = typeof reader.result === 'string' ? reader.result : ''
+
+      if (!base64) {
+        setUploadError('Unable to read this file. Please try another image.')
+        e.target.value = ''
+        return
+      }
 
       try {
-        const response = await fetch(`${API_BASE_URL}/user/profile-image`, {
+        setIsUploadingImage(true)
+
+        const response = await fetch(`${API_BASE_URL}/user/${user._id}/profile-image`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${user.token}`,
           },
-          body: JSON.stringify({ profileImage: base64 }),
+          body: JSON.stringify({ userId: user._id, profileImage: base64 }),
         })
 
         if (!response.ok) {
@@ -114,8 +142,13 @@ const Profile = () => {
         const updatedUser = await response.json()
         login(updatedUser)
         setProfileUser(updatedUser)
+        setUploadMessage('Profile photo updated successfully.')
       } catch (error) {
         console.error('Profile image upload error:', error)
+        setUploadError(error instanceof Error ? error.message : 'Unable to update profile image')
+      } finally {
+        setIsUploadingImage(false)
+        e.target.value = ''
       }
     }
     reader.readAsDataURL(file)
@@ -187,9 +220,17 @@ const Profile = () => {
         {isOwnProfile && (
           <div className="profile-section">
             <h3>Profile Photo</h3>
-            <label className="photo-upload">
-              <input type="file" accept="image/*" onChange={handleImageUpload} />
-              <span>Click to upload photo</span>
+            
+            {uploadError && <p className="photo-feedback photo-feedback-error">{uploadError}</p>}
+            {uploadMessage && <p className="photo-feedback photo-feedback-success">{uploadMessage}</p>}
+            <label className={`photo-upload ${isUploadingImage ? 'photo-upload-disabled' : ''}`}>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={handleImageUpload}
+                disabled={isUploadingImage}
+              />
+              <span>{isUploadingImage ? 'Uploading...' : 'Click to upload photo'}</span>
             </label>
           </div>
         )}

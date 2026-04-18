@@ -23,6 +23,7 @@ const AddInvestmentForm = ({ onClose, onSubmit }: AddInvestmentFormProps) => {
   const [bank, setBank] = useState('')
   const [autoDebit, setAutoDebit] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [verificationMessage, setVerificationMessage] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
@@ -37,36 +38,55 @@ const AddInvestmentForm = ({ onClose, onSubmit }: AddInvestmentFormProps) => {
     }
 
     setLoading(true)
+    setVerificationMessage('Verifying with Blostem SDK...')
 
-    // Simulate Blostem verification
+    // Simulate Blostem verification with randomized duration
+    const verificationDuration = 1500 + Math.random() * 1000
+    await new Promise(resolve => setTimeout(resolve, verificationDuration))
+
+    setVerificationMessage('✅ Verified Successfully')
+
+    const data: InvestmentData = {
+      investmentType,
+      amount: numAmount,
+      tenure: parseInt(tenure),
+      frequency,
+      bank,
+      autoDebit
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 800))
+
+    onSubmit(data)
+    setSuccess(true)
+
+    // Close after showing success
     setTimeout(() => {
-      setLoading(false)
-      setSuccess(true)
-
-      const data: InvestmentData = {
-        investmentType,
-        amount: numAmount,
-        tenure: parseInt(tenure),
-        frequency,
-        bank,
-        autoDebit
-      }
-
-      onSubmit(data)
-
-      // Close after showing success
-      setTimeout(() => {
-        onClose()
-      }, 2000)
-    }, 3000)
+      onClose()
+    }, 1500)
   }
 
   if (success) {
     return (
       <div className="investment-form-overlay">
-        <div className="investment-form success">
-          <h2>Verification Successful</h2>
-          <p>Streak +1. Influence Level Updated.</p>
+        <div className="investment-form success fade-in-scale">
+          <div className="success-content">
+            <h2>✅ Verification Successful</h2>
+            <p>Streak +1. Influence Level Updated.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="investment-form-overlay">
+        <div className="investment-form loading-modal fade-in-scale">
+          <div className="loader-content">
+            <div className="spinner-large"></div>
+            <p className="verification-message pulsing">{verificationMessage}</p>
+          </div>
         </div>
       </div>
     )
@@ -76,12 +96,6 @@ const AddInvestmentForm = ({ onClose, onSubmit }: AddInvestmentFormProps) => {
     <div className="investment-form-overlay" onClick={onClose}>
       <div className="investment-form" onClick={(e) => e.stopPropagation()}>
         <h2>Add Investment</h2>
-        {loading && (
-          <div className="loading">
-            <div className="spinner"></div>
-            <p>Submitting your request...</p>
-          </div>
-        )}
         {!loading && (
           <form onSubmit={handleSubmit}>
             <div className="form-group">
@@ -178,7 +192,7 @@ const AddInvestmentForm = ({ onClose, onSubmit }: AddInvestmentFormProps) => {
                 Cancel
               </button>
               <button type="submit" className="submit-btn">
-                Submit Investment
+                Complete Deposit
               </button>
             </div>
           </form>
@@ -186,6 +200,7 @@ const AddInvestmentForm = ({ onClose, onSubmit }: AddInvestmentFormProps) => {
       </div>
     </div>
   )
+}
 }
 
 export default AddInvestmentForm

@@ -3,6 +3,7 @@ import Streak, { IStreak } from "../models/streak"
 import User from "../models/user"
 import { calculateInfluenceLevel, updateInfluenceForInvestment } from "../utils/influenceCalculator"
 import { authenticate } from "../middleware/auth"
+import { deleteStreak, getHeatmapData } from "../controllers/streakController"
 
 const router = Router()
 
@@ -37,7 +38,7 @@ const updateUserInfluenceForEvent = async (userId: string, event: 'verification'
       }
       break
     case 'milestone':
-      if (streak && streak.streak % 7 === 0) {
+      if (streak && streak.streakCount % 7 === 0) {
         influenceChange = 1
       }
       break
@@ -91,13 +92,12 @@ router.post("/", async (req: Request, res: Response) => {
 
     const newStreak = new Streak({
       userId: req.user._id,
-      streak: 0,
+      streakCount: 0,
       streakName: req.body.streakName,
-      lastDate: req.body.lastDate,
-      dates: dates,
-      done: req.body.done,
+      nextDueDate: req.body.nextDueDate || new Date(),
+      completionHistory: [],
+      status: 'pending',
       investmentAmount: investmentAmount,
-      verified: req.body.verified || false,
       influenceLevel: updateInfluenceForInvestment(0, investmentAmount, tenure, investmentType, autoDebit),
       investmentType: investmentType,
       tenure: tenure,
@@ -132,8 +132,8 @@ router.patch("/", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Bad request: No dates array" })
     }
 
-    for (let i = 0; i < streak.dates.length; i++) {
-      if (streak.dates[i] != req.body.dates[i])
+    for (let i = 0; i < streak.completionHistory.length; i++) {
+      if (streak.completionHistory[i].date != req.body.dates[i])
         return res.status(400).json({
           message:
             "Bad request: the dates array does not match up with the records",
@@ -147,7 +147,7 @@ router.patch("/", async (req: Request, res: Response) => {
       })
 
     const currDate = Date.parse(req.body.lastDate)
-    const prevDate = Date.parse(streak.lastDate)
+    const prevDate = Date.parse(streak.nextDueDate.toString())
     let days = (currDate - prevDate) / (1000 * 3600 * 24)
 
     console.log(currDate, prevDate)
@@ -179,9 +179,12 @@ router.patch("/", async (req: Request, res: Response) => {
     }
 
     if (days >= 1 && days <= 2) {
-      streak.lastDate = req.body.lastDate
-      streak.streak += 1
-      streak.dates = req.body.dates
+      streak.nextDueDate = new Date(req.body.lastDate)
+      streak.streakCount += 1
+      streak.completionHistory = req.body.dates.map((date: string) => ({
+        date: date,
+        status: 'success'
+      }))
       
       // Update investment amount if provided
       if (req.body.investmentAmount !== undefined) {
@@ -198,7 +201,7 @@ router.patch("/", async (req: Request, res: Response) => {
 
       return res.status(200).json({
         updStreak,
-        message: `Streak updated: The streak is now ${updStreak.streak}`,
+        message: `Streak updated: The streak is now ${updStreak.streakCount}`,
       })
     }
   } catch (err: any) {
@@ -206,21 +209,73 @@ router.patch("/", async (req: Request, res: Response) => {
   }
 })
 
-router.delete("/", async (req: Request, res: Response) => {
-  const streak: IStreak | null = await Streak.findOne({ streakName: req.body.streakName, userId: req.user._id })
+// Get heatmap data for a streak
+router.get("/:id/heatmap", async (req: Request, res: Response) => {
+  try {
+    const streak = await Streak.findOne({ _id: req.params.id, userId: req.user._id })
 
-  if (streak == null)
-    return res.status(404).json({ message: "Bad request: Streak not found", code: -1 })
+    if (!streak) {
+      return res.status(404).json({ message: "Streak not found" })
+    }
 
-  // If deleting a pending streak, apply penalty
-  if (!streak.done) {
-    await updateUserInfluenceForEvent(req.user._id, 'delete_pending')
+    const heatmapData = getHeatmapData(streak.completionHistory)
+    res.status(200).json({ heatmap: heatmapData, nextDueDate: streak.nextDueDate })
+  } catch (err: any) {
+    res.status(500).json({ message: err.message })
   }
-  // Deleting completed streaks has no penalty
+})
 
-  await streak.deleteOne()
+// Update streak by ID
+router.patch("/:id", async (req: Request, res: Response) => {
+  try {
+    const streak = await Streak.findOne({ _id: req.params.id, userId: req.user._id })
 
-  res.status(200).json({ deleted: true, streak })
+    if (!streak) {
+      return res.status(404).json({ message: "Streak not found" })
+    }
+
+    // Update allowed fields
+    if (req.body.streakName) streak.streakName = req.body.streakName
+    if (req.body.frequency) streak.frequency = req.body.frequency
+    if (req.body.investmentAmount) streak.investmentAmount = req.body.investmentAmount
+    if (req.body.nextDueDate) streak.nextDueDate = new Date(req.body.nextDueDate)
+    if (req.body.investmentType) streak.investmentType = req.body.investmentType
+    if (req.body.tenure) streak.tenure = req.body.tenure
+    if (req.body.bank) streak.bank = req.body.bank
+    if (req.body.autoDebit !== undefined) streak.autoDebit = req.body.autoDebit
+
+    const updatedStreak = await streak.save()
+    res.status(200).json(updatedStreak)
+  } catch (err: any) {
+    res.status(400).json({ message: err.message })
+  }
+})
+
+router.delete("/", async (req: Request, res: Response) => {
+  try {
+    const streak: IStreak | null = await Streak.findOne({ streakName: req.body.streakName, userId: req.user._id })
+
+    if (streak == null) {
+      return res.status(404).json({ message: "Bad request: Streak not found", code: -1 })
+    }
+
+    // Call the controller function to handle deletion with penalty
+    const result = await deleteStreak(req.user._id, streak._id.toString())
+
+    if (!result.success) {
+      return res.status(400).json({ message: result.error })
+    }
+
+    res.status(200).json({
+      success: true,
+      deleted: true,
+      message: result.message,
+      updatedInfluenceScore: result.updatedInfluenceScore,
+      streak
+    })
+  } catch (err: any) {
+    res.status(400).json({ message: err.message })
+  }
 })
 
 router.post("/penalty", async (req: Request, res: Response) => {

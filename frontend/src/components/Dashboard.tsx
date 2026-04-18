@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from './AuthContext'
 import ChatPreview from './ChatPreview'
-import AddInvestmentForm, { InvestmentData } from './AddInvestmentForm'
 import Leaderboard, { LeaderboardUser } from './Leaderboard'
 import './Dashboard.css'
+import { ConsistencyHeatmap } from './ConsistencyHeatmap'
+import { StreakMenu } from './StreakMenu'
+import { RecurringStreakForm } from './RecurringStreakForm'
+import type { RecurringStreakData } from './RecurringStreakForm'
 
 interface StreakInterface {
   _id?: string
   streakName: string
-  streak: number
-  lastDate: string
-  dates: string[]
-  done: boolean
+  frequency: 'weekly' | 'monthly'
+  streakCount: number
+  nextDueDate: string
+  completionHistory: Array<{ date: string; status: 'success' | 'missed' }>
+  status: 'pending' | 'completed'
   influenceLevel: number
   verified: boolean
   investmentAmount: number
@@ -20,7 +24,7 @@ interface StreakInterface {
   bank: string
   autoDebit: boolean
   createdAt: string
-  delayPenaltyApplied?: boolean
+  updatedAt: string
 }
 
 const API_BASE_URL = 'http://localhost:5030'
@@ -33,10 +37,11 @@ const normalizeNumber = (value: unknown, fallback = 0): number => {
 const normalizeStreak = (streak: Partial<StreakInterface>): StreakInterface => ({
   _id: streak._id,
   streakName: streak.streakName ?? '',
-  streak: normalizeNumber(streak.streak),
-  lastDate: streak.lastDate ?? '',
-  dates: Array.isArray(streak.dates) ? streak.dates : [],
-  done: Boolean(streak.done),
+  frequency: streak.frequency ?? 'weekly',
+  streakCount: normalizeNumber(streak.streakCount),
+  nextDueDate: streak.nextDueDate ?? new Date().toISOString(),
+  completionHistory: Array.isArray(streak.completionHistory) ? streak.completionHistory : [],
+  status: streak.status ?? 'pending',
   influenceLevel: normalizeNumber(streak.influenceLevel),
   verified: Boolean(streak.verified),
   investmentAmount: normalizeNumber(streak.investmentAmount),
@@ -45,7 +50,7 @@ const normalizeStreak = (streak: Partial<StreakInterface>): StreakInterface => (
   bank: streak.bank ?? '',
   autoDebit: Boolean(streak.autoDebit),
   createdAt: streak.createdAt ?? new Date().toISOString(),
-  delayPenaltyApplied: Boolean(streak.delayPenaltyApplied),
+  updatedAt: streak.updatedAt ?? new Date().toISOString(),
 })
 
 const normalizeLeaderboardUser = (leader: Partial<LeaderboardUser>): LeaderboardUser => ({
@@ -55,22 +60,46 @@ const normalizeLeaderboardUser = (leader: Partial<LeaderboardUser>): Leaderboard
   profileImage: typeof leader.profileImage === 'string' ? leader.profileImage : '',
 })
 
-const getTodayJson = () => {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return today.toJSON()
+const formatDateInputValue = (dateValue?: string) => {
+  const date = new Date(dateValue ?? '')
+
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+const formatDueDate = (dateValue: string) => {
+  const date = new Date(dateValue)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Not set'
+  }
+
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 const Dashboard = () => {
+  const { user, updateUser } = useAuth()
   const [streakData, setStreakData] = useState<StreakInterface[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true)
-  const { user, updateUser } = useAuth()
-  const [newStreakModal, setNewStreakModal] = useState(false)
-  const [streakDisplayModal, setStreakDisplayModal] = useState(false)
-  const [streakDisplayName, setStreakDisplayName] = useState('')
-  const focusRef = useRef<HTMLInputElement>(null)
   const [loadingStreaks, setLoadingStreaks] = useState<Set<string>>(new Set())
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingStreak, setEditingStreak] = useState<StreakInterface | null>(null)
+  const [showHeatmap, setShowHeatmap] = useState(false)
+  const [selectedStreak, setSelectedStreak] = useState<StreakInterface | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [showSuccessPopup, setShowSuccessPopup] = useState<string | null>(null)
 
   const fetchLeaderboard = async (showLoader = true) => {
@@ -96,8 +125,8 @@ const Dashboard = () => {
           ? leaders.map((leader: Partial<LeaderboardUser>) => normalizeLeaderboardUser(leader))
           : []
       )
-    } catch (error) {
-      console.error('Error fetching leaderboard:', error)
+    } catch (fetchError) {
+      console.error('Error fetching leaderboard:', fetchError)
       setLeaderboard([])
     } finally {
       if (showLoader) {
@@ -107,7 +136,9 @@ const Dashboard = () => {
   }
 
   const syncUserInfluence = async () => {
-    if (!user?.token) return
+    if (!user?.token) {
+      return
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -118,16 +149,49 @@ const Dashboard = () => {
         },
       })
 
-      if (response.ok) {
-        const userData = await response.json()
-        updateUser({
-          influenceLevel: userData.influenceLevel,
-          verified: userData.verified,
-        })
-        await fetchLeaderboard(false)
+      if (!response.ok) {
+        return
       }
-    } catch (error) {
-      console.error('Error syncing user influence:', error)
+
+      const userData = await response.json()
+      updateUser({
+        influenceLevel: userData.influenceLevel,
+        verified: userData.verified,
+      })
+      await fetchLeaderboard(false)
+    } catch (syncError) {
+      console.error('Error syncing user influence:', syncError)
+    }
+  }
+
+  const fetchStreaks = async () => {
+    if (!user?.token) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/streaks`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch streaks (${response.status})`)
+      }
+
+      const fetchedStreaks = await response.json()
+      setStreakData(
+        Array.isArray(fetchedStreaks)
+          ? fetchedStreaks.map((streak: Partial<StreakInterface>) => normalizeStreak(streak))
+          : []
+      )
+      setError(null)
+    } catch (fetchError) {
+      console.error('Error fetching streaks:', fetchError)
+      setError('Unable to load your streaks right now.')
     }
   }
 
@@ -136,102 +200,17 @@ const Dashboard = () => {
   }, [])
 
   useEffect(() => {
-    const fetchStreaks = async () => {
-      if (!user?.token) return
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/streaks`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${user.token}`,
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch streaks (${response.status})`)
-        }
-
-        const fetchedStreaks = await response.json()
-        const todayJson = getTodayJson()
-
-        const processedStreaks = Array.isArray(fetchedStreaks)
-          ? fetchedStreaks.map((streak: Partial<StreakInterface>) => {
-              const normalizedStreak = normalizeStreak(streak)
-              const isDone = normalizedStreak.lastDate === todayJson
-
-              if (!isDone) {
-                const hoursPassed =
-                  (Date.now() - new Date(normalizedStreak.createdAt).getTime()) / (1000 * 60 * 60)
-                const wasDelayed = hoursPassed > 24
-
-                if (wasDelayed && !normalizedStreak.delayPenaltyApplied) {
-                  fetch(`${API_BASE_URL}/streaks/penalty`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: `Bearer ${user.token}`,
-                    },
-                    body: JSON.stringify({
-                      type: 'broken_promise',
-                      streakName: normalizedStreak.streakName,
-                    }),
-                  })
-                    .then(() => {
-                      normalizedStreak.delayPenaltyApplied = true
-                    })
-                    .catch((error) => {
-                      console.error('Error applying penalty:', error)
-                    })
-                }
-              }
-
-              return {
-                ...normalizedStreak,
-                done: isDone,
-              }
-            })
-          : []
-
-        setStreakData(processedStreaks)
-      } catch (error) {
-        console.error('Error fetching streaks:', error)
-      }
-    }
-
     void fetchStreaks()
   }, [user?.token])
 
-  useEffect(() => {
-    if (focusRef.current != null) focusRef.current.focus()
-  }, [newStreakModal, streakDisplayModal])
-
-  const addNewStreak = async (data: InvestmentData) => {
-    if (!user?.token) return
-
-    const streakName = `${data.investmentType} - ${data.amount}`
-
-    if (streakData.find((streak) => streak.streakName === streakName)) return
-
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    yesterday.setHours(0, 0, 0, 0)
-
-    const newStreak: StreakInterface = {
-      streakName,
-      streak: 0,
-      done: false,
-      dates: [],
-      lastDate: yesterday.toJSON(),
-      influenceLevel: 0,
-      verified: true,
-      investmentAmount: data.amount,
-      investmentType: data.investmentType,
-      tenure: data.tenure,
-      bank: data.bank,
-      autoDebit: data.autoDebit,
-      createdAt: new Date().toISOString(),
+  const handleCreateStreak = async (data: RecurringStreakData) => {
+    if (!user?.token) {
+      setError('Authentication required. Please log in.')
+      return
     }
+
+    setLoading(true)
+    setError(null)
 
     try {
       const response = await fetch(`${API_BASE_URL}/streaks`, {
@@ -240,154 +219,189 @@ const Dashboard = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${user.token}`,
         },
-        body: JSON.stringify({ ...newStreak, amount: data.amount }),
+        body: JSON.stringify(data),
       })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
-        throw new Error(errorData?.message || 'Unable to create streak')
+        throw new Error(errorData?.message || `Error: ${response.status}`)
       }
 
       const createdStreak = normalizeStreak(await response.json())
-
-      setStreakData((prev) => [...prev, createdStreak])
-    } catch (error) {
-      console.error('Error creating streak:', error)
+      setStreakData((previous) => [...previous, createdStreak])
+      setShowCreateForm(false)
+      await syncUserInfluence()
+    } catch (createError) {
+      const errorMessage = createError instanceof Error ? createError.message : 'Failed to create streak'
+      setError(errorMessage)
+      throw createError
+    } finally {
+      setLoading(false)
     }
   }
 
-  const serverUpdateStreak = async (changeStreakName: string) => {
-    if (!user?.token) return
+  const handleEditStreak = (streakId: string) => {
+    const streakToEdit = streakData.find((streak) => streak._id === streakId)
 
-    const existingStreak = streakData.find((streak) => streak.streakName === changeStreakName)
-    if (!existingStreak) return
-
-    const todayJson = getTodayJson()
-    const updatedPayload = {
-      ...existingStreak,
-      lastDate: todayJson,
-      dates: [...existingStreak.dates, todayJson],
+    if (!streakToEdit) {
+      setError('Unable to find that streak.')
+      return
     }
 
+    setEditingStreak(streakToEdit)
+  }
+
+  const handleUpdateStreak = async (data: RecurringStreakData) => {
+    if (!user?.token || !editingStreak?._id) {
+      setError('Authentication required. Please log in.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
     try {
-      await fetch(`${API_BASE_URL}/streaks`, {
+      const response = await fetch(`${API_BASE_URL}/streaks/${editingStreak._id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${user.token}`,
         },
-        body: JSON.stringify(updatedPayload),
+        body: JSON.stringify({
+          streakName: data.streakName,
+          frequency: data.frequency,
+          investmentAmount: data.investmentAmount,
+          nextDueDate: data.nextDueDate,
+        }),
       })
 
-      setStreakData((prev) =>
-        prev.map((streak) =>
-          streak.streakName === changeStreakName
-            ? {
-                ...streak,
-                done: true,
-                streak: streak.streak + 1,
-                lastDate: todayJson,
-                dates: [...streak.dates, todayJson],
-              }
-            : streak
-        )
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.message || 'Failed to update streak')
+      }
+
+      const updatedStreak = normalizeStreak(await response.json())
+      setStreakData((previous) =>
+        previous.map((streak) => (streak._id === updatedStreak._id ? updatedStreak : streak))
       )
-
+      setEditingStreak(null)
       await syncUserInfluence()
-    } catch (error) {
-      console.error('Error updating streak:', error)
+    } catch (updateError) {
+      const errorMessage = updateError instanceof Error ? updateError.message : 'Failed to update streak'
+      setError(errorMessage)
+      throw updateError
+    } finally {
+      setLoading(false)
     }
-
-    setStreakDisplayModal(false)
   }
 
-  const deleteStreak = async (streakName: string) => {
-    if (!user?.token) return
-
-    const nextStreaks = streakData.filter((streak) => streak.streakName !== streakName)
-    setStreakData(nextStreaks)
+  const handleViewHeatmap = async (streakId: string) => {
+    if (!user?.token) {
+      setError('Authentication required. Please log in.')
+      return
+    }
 
     try {
-      await fetch(`${API_BASE_URL}/streaks`, {
+      const response = await fetch(`${API_BASE_URL}/streaks/${streakId}/heatmap`, {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to get heatmap')
+      }
+
+      const streak = streakData.find((item) => item._id === streakId)
+      if (!streak) {
+        throw new Error('Streak not found')
+      }
+
+      setSelectedStreak(streak)
+      setShowHeatmap(true)
+    } catch (heatmapError) {
+      const errorMessage = heatmapError instanceof Error ? heatmapError.message : 'Failed to load heatmap'
+      setError(errorMessage)
+    }
+  }
+
+  const handleDeleteStreak = async (streakId: string) => {
+    if (!window.confirm('Are you sure you want to delete this streak?')) {
+      return
+    }
+
+    if (!user?.token) {
+      setError('Authentication required. Please log in.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/streaks/${streakId}`, {
         method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.message || 'Failed to delete streak')
+      }
+
+      setStreakData((previous) => previous.filter((streak) => streak._id !== streakId))
+      await syncUserInfluence()
+    } catch (deleteError) {
+      const errorMessage = deleteError instanceof Error ? deleteError.message : 'Failed to delete streak'
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const completeStreak = async (streakId: string, amount: number) => {
+    if (!user?.token) {
+      setError('Authentication required. Please log in.')
+      return
+    }
+
+    setLoadingStreaks((previous) => new Set(previous).add(streakId))
+    setError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/streaks/${streakId}/complete`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${user.token}`,
         },
-        body: JSON.stringify({ streakName }),
+        body: JSON.stringify({ investmentAmount: amount }),
       })
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.message || 'Unable to complete streak')
+      }
+
+      await fetchStreaks()
       await syncUserInfluence()
-    } catch (error) {
-      console.error('Error deleting streak:', error)
+
+      setShowSuccessPopup(streakId)
+      setTimeout(() => {
+        setShowSuccessPopup(null)
+      }, 3000)
+    } catch (completeError) {
+      const errorMessage = completeError instanceof Error ? completeError.message : 'Unable to complete streak'
+      setError(errorMessage)
+    } finally {
+      setLoadingStreaks((previous) => {
+        const nextLoading = new Set(previous)
+        nextLoading.delete(streakId)
+        return nextLoading
+      })
     }
-  }
-
-  const completeStreak = async (streakName: string) => {
-    if (!user?.token) return
-
-    setLoadingStreaks((prev) => new Set(prev).add(streakName))
-
-    setTimeout(async () => {
-      const existingStreak = streakData.find((streak) => streak.streakName === streakName)
-      if (!existingStreak) {
-        setLoadingStreaks((prev) => {
-          const nextLoading = new Set(prev)
-          nextLoading.delete(streakName)
-          return nextLoading
-        })
-        return
-      }
-
-      const todayJson = getTodayJson()
-      const updatedPayload = {
-        ...existingStreak,
-        lastDate: todayJson,
-        dates: [...existingStreak.dates, todayJson],
-        done: true,
-        streak: existingStreak.streak + 1,
-      }
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/streaks`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${user.token}`,
-          },
-          body: JSON.stringify(updatedPayload),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => null)
-          throw new Error(errorData?.message || 'Unable to update streak')
-        }
-
-        const result = await response.json()
-        const normalizedUpdatedStreak = normalizeStreak(result.updStreak)
-
-        setStreakData((prev) =>
-          prev.map((streak) =>
-            streak.streakName === streakName ? { ...normalizedUpdatedStreak, done: true } : streak
-          )
-        )
-
-        await syncUserInfluence()
-
-        setShowSuccessPopup(streakName)
-        setTimeout(() => {
-          setShowSuccessPopup(null)
-        }, 3000)
-      } catch (error) {
-        console.error('Error updating streak:', error)
-      } finally {
-        setLoadingStreaks((prev) => {
-          const nextLoading = new Set(prev)
-          nextLoading.delete(streakName)
-          return nextLoading
-        })
-      }
-    }, 3000)
   }
 
   const totalInfluenceLevel = normalizeNumber(user?.influenceLevel)
@@ -395,121 +409,168 @@ const Dashboard = () => {
   return (
     <div className="dashboard-container">
       <div className="dashboard-stats">
-        <div className="stat-pill influence-pill">Influence {'\u2B50'} {Math.floor(totalInfluenceLevel)}</div>
+        <div className="stat-pill influence-pill">
+          <span className="influence-pill-label">Influence</span>
+          <span className="influence-pill-value">⭐ {Math.floor(totalInfluenceLevel)}</span>
+        </div>
         <Leaderboard users={leaderboard} isLoading={isLeaderboardLoading} />
       </div>
 
       <div className="dashboard-content">
         <div className="streaks-section">
           <div className="section-header">
-            <button className="add-streak-btn" onClick={() => setNewStreakModal(true)}>
-              Promise To Invest
+            <div>
+              <h2 className="section-title">Your Investment Streaks</h2>
+              <p className="section-subtitle">Track recurring deposits, edit upcoming schedules, and keep momentum visible.</p>
+            </div>
+            <button className="add-streak-btn" onClick={() => setShowCreateForm(true)}>
+              Create New Streak
             </button>
           </div>
 
-          <div className="streaks-grid">
-            <div className="streak-column">
-              <h3 className="column-title done">Completed Transactions</h3>
-              <div className="streak-list">
-                {streakData.filter((streak) => streak.done).map((streak) => (
-                  <div
-                    key={streak._id ?? streak.streakName}
-                    className="streak-card done-card"
-                    onClick={() => deleteStreak(streak.streakName)}
-                  >
-                    <div className="streak-header">
-                      <span className="streak-name">{streak.investmentType}</span>
-                      <span className="streak-name">₹{streak.investmentAmount.toFixed(0)}</span>
-                      <span className="streak-count">{streak.streak}🔥</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {streakData.length === 0 ? (
+            <div className="empty-state">
+              <h3>No streaks yet</h3>
+              <p>Create your first recurring investment streak to start building influence.</p>
             </div>
+          ) : (
+            <div className="streaks-grid">
+              {streakData.map((streak) => {
+                const streakId = streak._id ?? ''
+                const isCompleting = loadingStreaks.has(streakId)
 
-            <div className="streak-column">
-              <h3 className="column-title not-done">Pending Transactions</h3>
-              <div className="streak-list">
-                {streakData.filter((streak) => !streak.done).map((streak) => {
-                  const hoursPassed =
-                    (Date.now() - new Date(streak.createdAt).getTime()) / (1000 * 60 * 60)
-                  const isDelayed = hoursPassed > 24
-                  const isLoading = loadingStreaks.has(streak.streakName)
-
-                  return (
-                    <div
-                      key={streak._id ?? streak.streakName}
-                      className={`streak-card not-done-card ${isDelayed ? 'delayed' : ''}`}
-                    >
-                      <div className="streak-header">
-                        <span className="streak-name">{streak.investmentType}</span>
-                      <span className="streak-name">₹{streak.investmentAmount.toFixed(0)}</span>
-                     
+                return (
+                  <div key={streakId} className="streak-card">
+                    <div className="streak-card-header">
+                      <div className="streak-info">
+                        <span className="frequency-badge">
+                          {streak.frequency === 'weekly' ? 'Weekly' : 'Monthly'}
+                        </span>
+                        <h3 className="streak-name">{streak.streakName}</h3>
+                        <p className="streak-supporting-text">
+                          {streak.investmentType || 'Recurring investment'}
+                          {streak.bank ? ` with ${streak.bank}` : ''}
+                        </p>
                       </div>
-                      {isDelayed && (
-                        <div className="delay-warning">Delay detected. Influence may drop.</div>
-                      )}
-                      {isLoading ? (
-                        <div className="loading-state">
-                          <div className="spinner"></div>
-                          <span>Verifying transaction via Blostem...</span>
-                        </div>
-                      ) : (
-                        <button
-                          className="cta-button"
-                          onClick={() => completeStreak(streak.streakName)}
-                          disabled={isLoading}
-                        >
-                          {streak.investmentType === 'Savings Goal' ? 'Sync with Bank' : 'Complete Deposit'}
-                        </button>
-                      )}
+
+                      <StreakMenu
+                        streakId={streakId}
+                        streakName={streak.streakName}
+                        onViewHeatmap={handleViewHeatmap}
+                        onEdit={handleEditStreak}
+                        onDelete={handleDeleteStreak}
+                      />
                     </div>
-                  )
-                })}
-              </div>
+
+                    <div className="streak-highlight-grid">
+                      <div className="stat stat-highlight">
+                        <span className="stat-label">Amount</span>
+                        <span className="stat-value stat-value-money">Rs {streak.investmentAmount.toLocaleString()}</span>
+                      </div>
+                      <div className="stat stat-highlight">
+                        <span className="stat-label">Next Due Date</span>
+                        <span className="stat-value stat-value-neutral">{formatDueDate(streak.nextDueDate)}</span>
+                      </div>
+                    </div>
+
+                    <div className="streak-meta-grid">
+                      <div className="stat">
+                        <span className="stat-label">Completed</span>
+                        <span className="stat-value">{streak.streakCount}</span>
+                      </div>
+                      <div className="stat">
+                        <span className="stat-label">Status</span>
+                        <span className={`status-chip ${streak.status === 'completed' ? 'status-chip-completed' : 'status-chip-pending'}`}>
+                          {streak.status === 'completed' ? 'Completed today' : 'Pending'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="streak-details">
+                      {streak.autoDebit && <span className="detail-tag">Auto-debit</span>}
+                      {streak.tenure > 0 && <span className="detail-tag">{streak.tenure} month tenure</span>}
+                      {streak.verified && <span className="detail-tag">Verified</span>}
+                    </div>
+
+                    {streak.status === 'pending' && (
+                      <button
+                        className="btn-complete"
+                        onClick={() => completeStreak(streakId, streak.investmentAmount)}
+                        disabled={isCompleting}
+                      >
+                        {isCompleting ? 'Processing...' : 'Complete Deposit'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-          </div>
+          )}
         </div>
 
         <ChatPreview />
       </div>
 
-      {newStreakModal && (
-        <AddInvestmentForm
-          onClose={() => setNewStreakModal(false)}
-          onSubmit={(data) => {
-            void addNewStreak(data)
-            setNewStreakModal(false)
-          }}
-        />
+      {error && (
+        <div className="error-banner">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError(null)}>x</button>
+        </div>
       )}
 
-      {streakDisplayModal && (
-        <div className="modal-overlay" onClick={() => setStreakDisplayModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Mark Complete?</h2>
-            <p>Complete "{streakDisplayName}"?</p>
-            <div className="modal-buttons">
-              <button className="btn-cancel" onClick={() => setStreakDisplayModal(false)}>
-                Cancel
-              </button>
-              <button className="btn-complete" onClick={() => void serverUpdateStreak(streakDisplayName)}>
-                Mark Complete
-              </button>
-            </div>
+      {showCreateForm && (
+        <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <RecurringStreakForm
+              onSubmit={handleCreateStreak}
+              onCancel={() => setShowCreateForm(false)}
+              isLoading={loading}
+              mode="create"
+              title="Create New Streak"
+              submitLabel="Create Streak"
+            />
           </div>
         </div>
+      )}
+
+      {editingStreak && (
+        <div className="modal-overlay" onClick={() => setEditingStreak(null)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <RecurringStreakForm
+              onSubmit={handleUpdateStreak}
+              onCancel={() => setEditingStreak(null)}
+              isLoading={loading}
+              mode="edit"
+              title="Edit Streak"
+              submitLabel="Save Changes"
+              initialData={{
+                streakName: editingStreak.streakName,
+                frequency: editingStreak.frequency,
+                investmentAmount: editingStreak.investmentAmount,
+                nextDueDate: formatDateInputValue(editingStreak.nextDueDate),
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {showHeatmap && selectedStreak && (
+        <ConsistencyHeatmap
+          completionHistory={selectedStreak.completionHistory || []}
+          streakName={selectedStreak.streakName}
+          onClose={() => {
+            setShowHeatmap(false)
+            setSelectedStreak(null)
+          }}
+        />
       )}
 
       {showSuccessPopup && (
         <div className="popup-overlay">
           <div className="popup-box">
             <div className="popup-success">
-              <svg className="popup-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
               <h3>Transaction Completed</h3>
-              <p>Verification successful!</p>
+              <p>Verification successful.</p>
             </div>
             <button className="popup-button" onClick={() => setShowSuccessPopup(null)}>
               OK
