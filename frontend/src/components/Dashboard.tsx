@@ -15,36 +15,24 @@ const normalizeNumber = (value: unknown, fallback = 0): number => {
   return Number.isFinite(parsedValue) ? parsedValue : fallback
 }
 
-const normalizeStreak = (streak: Partial<StreakInterface>): StreakInterface => {
-  const frequency = streak.frequency === 'monthly' ? 'monthly' : 'weekly'
-  const completionHistory = Array.isArray(streak.completionHistory)
-    ? streak.completionHistory.map((item) => {
-        if (typeof item === 'string') {
-          return { date: item, status: 'success' as const }
-        }
-        return item
-      })
-    : []
-
-  return {
-    _id: streak._id ?? '',
-    streakName: streak.streakName ?? '',
-    frequency,
-    streakCount: normalizeNumber(streak.streakCount),
-    nextDueDate: streak.nextDueDate ?? new Date().toISOString(),
-    completionHistory,
-    status: streak.status ?? 'pending',
-    influenceLevel: normalizeNumber(streak.influenceLevel),
-    verified: Boolean(streak.verified),
-    investmentAmount: normalizeNumber(streak.investmentAmount),
-    investmentType: streak.investmentType ?? '',
-    tenure: normalizeNumber(streak.tenure),
-    bank: streak.bank ?? '',
-    autoDebit: Boolean(streak.autoDebit),
-    createdAt: streak.createdAt ?? new Date().toISOString(),
-    updatedAt: streak.updatedAt ?? new Date().toISOString(),
-  }
-}
+const normalizeStreak = (streak: Partial<StreakInterface>): StreakInterface => ({
+  _id: streak._id,
+  streakName: streak.streakName ?? '',
+  frequency: streak.frequency ?? 'weekly',
+  streakCount: normalizeNumber(streak.streakCount),
+  nextDueDate: streak.nextDueDate ?? new Date().toISOString(),
+  completionHistory: Array.isArray(streak.completionHistory) ? streak.completionHistory : [],
+  status: streak.status ?? 'pending',
+  influenceLevel: normalizeNumber(streak.influenceLevel),
+  verified: Boolean(streak.verified),
+  investmentAmount: normalizeNumber(streak.investmentAmount),
+  investmentType: streak.investmentType ?? '',
+  tenure: normalizeNumber(streak.tenure),
+  bank: streak.bank ?? '',
+  autoDebit: Boolean(streak.autoDebit),
+  createdAt: streak.createdAt ?? new Date().toISOString(),
+  updatedAt: streak.updatedAt ?? new Date().toISOString(),
+})
 
 const normalizeLeaderboardUser = (leader: Partial<LeaderboardUser>): LeaderboardUser => ({
   _id: leader._id ?? '',
@@ -94,6 +82,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showSuccessPopup, setShowSuccessPopup] = useState<string | null>(null)
+  const [verifyingStreakId, setVerifyingStreakId] = useState<string | null>(null)
+  const [verifyingAmount, setVerifyingAmount] = useState<number>(0)
 
   const fetchLeaderboard = async (showLoader = true) => {
     if (showLoader) {
@@ -360,6 +350,12 @@ const Dashboard = () => {
       return
     }
 
+    // Show verification modal first
+    setVerifyingStreakId(streakId)
+    setVerifyingAmount(amount)
+  }
+
+  const performDepositAfterVerification = async (streakId: string, amount: number) => {
     setLoadingStreaks((previous) => new Set(previous).add(streakId))
     setError(null)
 
@@ -397,6 +393,12 @@ const Dashboard = () => {
     }
   }
 
+  const handleVerificationComplete = async () => {
+    if (!verifyingStreakId) return
+    setVerifyingStreakId(null)
+    await performDepositAfterVerification(verifyingStreakId, verifyingAmount)
+  }
+
   const totalInfluenceLevel = normalizeNumber(user?.influenceLevel)
 
   return (
@@ -414,7 +416,7 @@ const Dashboard = () => {
           <div className="section-header">
             <div>
               <h2 className="section-title">Your Investment Streaks</h2>
-              <p className="section-subtitle">Track recurring deposits, edit upcoming schedules, and keep momentum visible.</p>
+              <p className="section-subtitle">Track your  deposits, next pending deposit and check your investment heatmap to build consistency</p>
             </div>
             <button className="add-streak-btn" onClick={() => setShowCreateForm(true)}>
               Create New Streak
@@ -567,6 +569,33 @@ const Dashboard = () => {
             </div>
             <button className="popup-button" onClick={() => setShowSuccessPopup(null)}>
               OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {verifyingStreakId && (
+        <div className="popup-overlay" onClick={() => setVerifyingStreakId(null)}>
+          <div className="popup-box" onClick={(e) => e.stopPropagation()}>
+            <div className="popup-success">
+              <h3>Verify Your Deposit With Blostem SDK...</h3>
+              
+              <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                <div style={{ animation: 'spin 1s linear infinite', display: 'inline-block', fontSize: '24px' }}>⟳</div>
+              </div>
+            </div>
+            <style>{`
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
+            <button 
+              className="popup-button" 
+              onClick={handleVerificationComplete}
+              style={{ marginTop: '20px' }}
+            >
+              Verify & Complete Deposit
             </button>
           </div>
         </div>

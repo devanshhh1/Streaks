@@ -1,4 +1,4 @@
-export interface CompletionRecord {
+export interface CompletionHistoryEntry {
   date: string
   status: 'success' | 'missed'
 }
@@ -9,8 +9,8 @@ export interface StreakInterface {
   frequency: 'weekly' | 'monthly'
   streakCount: number
   nextDueDate: string
-  completionHistory: CompletionRecord[]
-  status: string
+  completionHistory: CompletionHistoryEntry[]
+  status: 'pending' | 'completed'
   influenceLevel: number
   verified: boolean
   investmentAmount: number
@@ -24,9 +24,10 @@ export interface StreakInterface {
 
 export interface DiscussionComment {
   _id?: string
+  userId?: string
+  text: string
   userName: string
   userInfluence: number
-  text: string
-  userId?: string
+  timestamp?: string
   isStatic?: boolean
 }
